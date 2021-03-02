@@ -1,0 +1,79 @@
+---
+title: "Analysis of ctDNA Data from GIST  Phase I Study"
+author: "Stat4ward, `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  word_document:
+     reference_docx: reference_doc.docx
+toc: TRUE
+---
+\pagebreak
+
+# GOAL
+
+# DATA
+
+```{r setup,include=FALSE}
+knitr::opts_chunk$set(cache=FALSE,echo = FALSE, warning=FALSE, message=FALSE, fig.width = 6.5, fig.height = 6.5)
+
+rm(list = ls())
+library(haven)
+library(tidyverse)
+library(readr)
+library(ggplot2)
+library(knitr)
+library(readxl)
+library(purrr)
+
+# data input
+
+adrs<- read_sas("C:\\Users\\Sha\\OneDrive\\Documents\\Deciphera\\Phase I Study\\GIST\\adrs.sas7bdat")
+#glimpse(adrs)
+
+adsl<- read_sas("C:\\Users\\Sha\\OneDrive\\Documents\\Deciphera\\Phase I Study\\GIST\\adsl.sas7bdat")
+#glimpse(adsl)
+
+adtte<-read_sas("C:\\Users\\Sha\\OneDrive\\Documents\\Deciphera\\Phase I Study\\GIST\\adtte.sas7bdat")
+#glimpse(adtte)
+
+ctDNA.all<-read.csv("C:\\Users\\Sha\\OneDrive\\Documents\\Deciphera\\Phase I Study\\GIST\\20201223_Deciphera_SOW1_1064Samples_G360Report_Cumulative.csv")
+
+ctDNA<-ctDNA.all%>%
+  filter(Cancertype=="GIST (Gastrointestinal stromal tumor)"|Cancertype=="GIST (Gastrointestinal Stromal Tumor)")
+
+```
+
+ctDNA data from Guardant Health (20201223_Deciphera_SOW1_1064Samples_G360Report_Cumulative.csv)
+```{r}
+
+no.patient<-n_distinct(ctDNA$Patient_ID)
+
+ctDNA1<-ctDNA%>%
+  filter(Sample_status=="SUCCESS")
+
+no.row.fail<-nrow(ctDNA)-nrow(ctDNA1)
+
+#ctDNA.germline<-ctDNA1%>%filter(Somatic_status=="germline")
+
+# no.row.gerline<-nrow(ctDNA1)-nrow(ctDNA1<-ctDNA1%>%
+#   filter(Somatic_status=="somatic"))
+#   
+# no.patient.somatic<-n_distinct(ctDNA1$Patient_ID)
+
+#unique(ctDNA1$Variant_type)
+
+#ctDNA1%>%filter(Variant_type=="Fusion")
+
+#ctDNA.fusion<-ctDNA1%>%filter(Variant_type=="Fusion")
+
+ctDNA1<-ctDNA1%>%filter(Variant_type!="Fusion")%>%droplevels()
+
+no.patient.sucess<-n_distinct(ctDNA1$Patient_ID)
+
+
+ctDNA1%>%filter(Gene=="PDGFRA")%>%select(Patient_ID, Visit_name,Gene, Exon )%>%view()
+
+summary(ctDNA1$Percentage)
+
+```
+
+There are `r nrow(ctDNA)` rows in the original ctDNA data set for Cancertype GIST (Gastrointestinal stromal tumor). `r no.row.fail` rows are excluded since Sample Status is NEGATIVE, `r n_distinct(ctDNA$Patient_ID)-n_distinct(ctDNA1$Patient_ID)` patients are eliminated because of this step. There are  `r no.patient.sucess` patients in the data with Sample Status being Success. 
