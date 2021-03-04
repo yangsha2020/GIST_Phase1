@@ -23,27 +23,30 @@ library(ggplot2)
 library(knitr)
 library(readxl)
 library(purrr)
+library(tableone)
 
 # data input
 
-adrs<- read_sas("C:\\Users\\Sha\\OneDrive\\Documents\\Deciphera\\Phase I Study\\GIST\\adrs.sas7bdat")
+adrs<- read_sas("C:\\Users\\ShaYang\\OneDrive - Stat4ward\\Documents\\Deciphera\\Phase I\\GIST\\adrs.sas7bdat")
 #glimpse(adrs)
 
-adsl<- read_sas("C:\\Users\\Sha\\OneDrive\\Documents\\Deciphera\\Phase I Study\\GIST\\adsl.sas7bdat")
+adsl<- read_sas("C:\\Users\\ShaYang\\OneDrive - Stat4ward\\Documents\\Deciphera\\Phase I\\GIST\\adsl.sas7bdat")
 #glimpse(adsl)
 
-adtte<-read_sas("C:\\Users\\Sha\\OneDrive\\Documents\\Deciphera\\Phase I Study\\GIST\\adtte.sas7bdat")
+adtte<-read_sas("C:\\Users\\ShaYang\\OneDrive - Stat4ward\\Documents\\Deciphera\\Phase I\\GIST\\adtte.sas7bdat")
 #glimpse(adtte)
 
-ctDNA.all<-read.csv("C:\\Users\\Sha\\OneDrive\\Documents\\Deciphera\\Phase I Study\\GIST\\20201223_Deciphera_SOW1_1064Samples_G360Report_Cumulative.csv")
+ctDNA.all<-read.csv("C:\\Users\\ShaYang\\OneDrive - Stat4ward\\Documents\\Deciphera\\Phase I\\GIST\\20210209_Deciphera_SOW1_1064Samples_G360Report_Cumulative.csv")
 
-ctDNA<-ctDNA.all%>%
-  filter(Cancertype=="GIST (Gastrointestinal stromal tumor)"|Cancertype=="GIST (Gastrointestinal Stromal Tumor)")
+ctDNA<-ctDNA.all
+# %>%filter(Cancertype=="GIST (Gastrointestinal stromal tumor)"|Cancertype=="GIST (Gastrointestinal Stromal Tumor)")
 
 ```
 
 ctDNA data from Guardant Health (20201223_Deciphera_SOW1_1064Samples_G360Report_Cumulative.csv)
 ```{r}
+
+ctDNA<-ctDNA%>%mutate(Patient_ID=gsub(" ","", Patient_ID))
 
 no.patient<-n_distinct(ctDNA$Patient_ID)
 
@@ -52,12 +55,16 @@ ctDNA1<-ctDNA%>%
 
 no.row.fail<-nrow(ctDNA)-nrow(ctDNA1)
 
-#ctDNA.germline<-ctDNA1%>%filter(Somatic_status=="germline")
+ctDNA.germline<-nrow(ctDNA1%>%filter(Somatic_status=="germline"))
 
-# no.row.gerline<-nrow(ctDNA1)-nrow(ctDNA1<-ctDNA1%>%
-#   filter(Somatic_status=="somatic"))
-#   
-# no.patient.somatic<-n_distinct(ctDNA1$Patient_ID)
+# ctDNA1<-ctDNA1%>%
+#   filter(Somatic_status=="somatic")  will update this once the somatic status is corrected
+
+ ctDNA1<-ctDNA1%>%
+   filter(Somatic_status!="germline")  
+
+   
+#no.patient.somatic<-n_distinct(ctDNA1$Patient_ID)
 
 #unique(ctDNA1$Variant_type)
 
@@ -65,15 +72,75 @@ no.row.fail<-nrow(ctDNA)-nrow(ctDNA1)
 
 #ctDNA.fusion<-ctDNA1%>%filter(Variant_type=="Fusion")
 
-ctDNA1<-ctDNA1%>%filter(Variant_type!="Fusion")%>%droplevels()
+#ctDNA1<-ctDNA1%>%filter(Variant_type!="Fusion")%>%droplevels()
 
 no.patient.sucess<-n_distinct(ctDNA1$Patient_ID)
 
+ctDNA1<-ctDNA1%>%mutate(Visit_name=gsub(" ","",Visit_name))%>%
+  mutate(Visit_name=gsub("BASELINE", "C1D1", Visit_name,ignore.case = TRUE))%>%
+  mutate(Visit_name=gsub("UNSCH","Unscheduled",Visit_name))%>%
+  mutate(Visit_name=gsub("UNS","Unscheduled",Visit_name))%>%
+  mutate(Visit_name=gsub("Day1","D1", Visit_name))
 
-ctDNA1%>%filter(Gene=="PDGFRA")%>%select(Patient_ID, Visit_name,Gene, Exon )%>%view()
+ctDNA1<-ctDNA1%>%mutate(Received_date=as.Date(Received_date, "%m/%d/%Y"),
+                   Bloodcoll_date=as.Date(Bloodcoll_date, "%m/%d/%Y"),
+                   Reported_date=as.Date(Reported_date,"%m/%d/%Y"))
 
-summary(ctDNA1$Percentage)
+ctDNA1<-ctDNA1%>%mutate(Cancer.type=case_when(
+  Cancertype=="GIST (Gastrointestinal Stromal Tumor)"~ "GIST",
+  Cancertype=="GIST (Gastrointestinal stromal tumor)"~ "GIST",
+  Cancertype=="Glioblastoma"~ "GBM",
+  TRUE ~ Cancertype))
 
+ctDNA1<-ctDNA1%>%mutate(Cancer.type = na_if(Cancer.type, ""))
 ```
 
 There are `r nrow(ctDNA)` rows in the original ctDNA data set for Cancertype GIST (Gastrointestinal stromal tumor). `r no.row.fail` rows are excluded since Sample Status is NEGATIVE, `r n_distinct(ctDNA$Patient_ID)-n_distinct(ctDNA1$Patient_ID)` patients are eliminated because of this step. There are  `r no.patient.sucess` patients in the data with Sample Status being Success. 
+
+```{r}
+
+visit.summary<-as.data.frame.matrix(table(ctDNA1$Patient_ID, ctDNA1$Visit_name))
+
+myVars = c("Variant_type","Indel_type","Gene","Exon","Percentage","Received_date")
+catVars= c("Variant_type","Indel_type","Gene","Exon","Received_date")
+tab.summary <- CreateTableOne(vars = myVars, data = ctDNA1, factorVars = catVars)
+
+```
+
+
+```{r}
+
+#Imputations
+
+ctDNA1<-ctDNA1%>%group_by(Patient_ID)%>%fill(Cancer.type, .direction = "updown")%>%ungroup()
+
+ctDNA.mutation<-ctDNA1%>%
+  filter(Variant_type!="CNV")%>%
+  #mutate(Visit_name=droplevels(as.factor(Visit_name)), Gene=droplevels(as.factor(Gene)), Exon=droplevels(as.factor(Exon)))%>%
+  expand(Visit_name,nesting(Patient_ID,Variant_type,Gene, Exon, Mut_aa, Mut_nt))%>%arrange(Patient_ID,Visit_name,Variant_type,Gene,Exon)
+
+visit.all<-paste(ctDNA1$Patient_ID, ctDNA1$Visit_name)
+visit.check<-unique(visit.all)
+
+impute<-ctDNA.mutation%>%left_join(ctDNA1, by = c("Patient_ID"="Patient_ID",
+                                                        "Visit_name"="Visit_name",
+                                                        "Variant_type"="Variant_type",
+                                                        "Gene"="Gene",
+                                                        "Exon"="Exon",
+                                                        "Mut_aa"="Mut_aa",
+                                                        "Mut_nt"="Mut_nt"))%>%
+  group_by(Patient_ID,Variant_type,Gene,Exon,Mut_aa,Mut_nt)%>%
+  fill(`ï..Study_ID`:Transcript, .direction = "updown")%>%
+  fill(Cancertype, .direction = "updown")%>%
+  ungroup()%>%
+  mutate(Percentage=case_when(
+    !is.na(Percentage)~Percentage,
+    is.na(Percentage)&paste(Patient_ID,Visit_name)%in%visit.check ~ 0.02,
+    is.na(Percentage)&!paste(Patient_ID,Visit_name)%in%visit.check ~ 999))%>%
+  filter(Percentage!=999)
+
+# %>%mutate(Visit_name=
+#         factor(Visit_name,levels =       c("C1D1","C3D1","C5D1","C5D15","C7D1","C9D1","C11D1","C12D1","COC1D1","COC3D1","COC5D1","COC7D1","COC9D1","EOT")) )
+
+
+```
