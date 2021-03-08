@@ -41,6 +41,32 @@ ctDNA.all<-read.csv("C:\\Users\\ShaYang\\OneDrive - Stat4ward\\Documents\\Deciph
 ctDNA<-ctDNA.all
 # %>%filter(Cancertype=="GIST (Gastrointestinal stromal tumor)"|Cancertype=="GIST (Gastrointestinal Stromal Tumor)")
 
+successful.sample.list<-read_excel("C:\\Users\\ShaYang\\OneDrive - Stat4ward\\Documents\\Deciphera\\Phase I\\GIST\\Copy of 20210209_Deciphera_SOW1_1064Samples_G360Report_Successful_Failed.xlsx", sheet="Successful ")
+
+successful.sample.list<-successful.sample.list%>%mutate(Patient_ID=gsub(" ","", Patient_ID))%>%
+  mutate(Visit_name=gsub(" ","",Visit_name))%>%
+  mutate(Visit_name=gsub("BASELINE", "C1D1", Visit_name,ignore.case = TRUE))%>%
+  mutate(Visit_name=gsub("UNSCH","Unscheduled",Visit_name))%>%
+  mutate(Visit_name=gsub("UNS","Unscheduled",Visit_name))%>%
+  mutate(Visit_name=gsub("Day1","D1", Visit_name))%>%
+  mutate(Visit_name=gsub("FSV","EOS", Visit_name))
+
+# a list of all the successful visits
+Visit.check<-paste(successful.sample.list$Patient_ID, successful.sample.list$Visit_name)
+
+Visit.check<-Visit.check[!duplicated(Visit.check)]
+
+# fail.sample.list<-read_excel("C:\\Users\\ShaYang\\OneDrive - Stat4ward\\Documents\\Deciphera\\Phase I\\GIST\\Copy of 20210209_Deciphera_SOW1_1064Samples_G360Report_Successful_Failed.xlsx", sheet="Failed")
+# 
+# fail.sample.list<-fail.sample.list%>%mutate(Patient_ID=gsub(" ","", Patient_ID))%>%
+#   mutate(Visit_name=gsub(" ","",Visit_name))%>%
+#   mutate(Visit_name=gsub("BASELINE", "C1D1", Visit_name,ignore.case = TRUE))%>%
+#   mutate(Visit_name=gsub("UNSCH","Unscheduled",Visit_name))%>%
+#   mutate(Visit_name=gsub("UNS","Unscheduled",Visit_name))%>%
+#   mutate(Visit_name=gsub("Day1","D1", Visit_name))%>%
+#   mutate(Visit_name=gsub("FSV","EOS", Visit_name))
+
+
 ```
 
 ctDNA data from Guardant Health (20201223_Deciphera_SOW1_1064Samples_G360Report_Cumulative.csv)
@@ -50,17 +76,21 @@ ctDNA<-ctDNA%>%mutate(Patient_ID=gsub(" ","", Patient_ID))
 
 no.patient<-n_distinct(ctDNA$Patient_ID)
 
-ctDNA1<-ctDNA%>%
-  filter(Sample_status=="SUCCESS")
+ctDNA<-ctDNA%>%filter(Alt.NoAlt=="1") 
 
-no.row.fail<-nrow(ctDNA)-nrow(ctDNA1)
+# "Alt-NoAlt" = 1 means that at least 1 somatic mutation was detected in that sample
 
-ctDNA.germline<-nrow(ctDNA1%>%filter(Somatic_status=="germline"))
+# ctDNA1<-ctDNA%>%
+#   filter(Sample_status=="SUCCESS")
+# 
+# no.row.fail<-nrow(ctDNA)-nrow(ctDNA1)
+
+ctDNA.germline<-nrow(ctDNA%>%filter(Somatic_status=="germline"))
 
 # ctDNA1<-ctDNA1%>%
 #   filter(Somatic_status=="somatic")  will update this once the somatic status is corrected
 
- ctDNA1<-ctDNA1%>%
+ ctDNA1<-ctDNA%>%
    filter(Somatic_status!="germline")  
 
    
@@ -80,12 +110,14 @@ ctDNA1<-ctDNA1%>%mutate(Visit_name=gsub(" ","",Visit_name))%>%
   mutate(Visit_name=gsub("BASELINE", "C1D1", Visit_name,ignore.case = TRUE))%>%
   mutate(Visit_name=gsub("UNSCH","Unscheduled",Visit_name))%>%
   mutate(Visit_name=gsub("UNS","Unscheduled",Visit_name))%>%
-  mutate(Visit_name=gsub("Day1","D1", Visit_name))
+  mutate(Visit_name=gsub("Day1","D1", Visit_name))%>%
+  mutate(Visit_name=gsub("FSV","EOS", Visit_name))
 
 ctDNA1<-ctDNA1%>%mutate(Received_date=as.Date(Received_date, "%m/%d/%Y"),
                    Bloodcoll_date=as.Date(Bloodcoll_date, "%m/%d/%Y"),
                    Reported_date=as.Date(Reported_date,"%m/%d/%Y"))
 
+##???
 ctDNA1<-ctDNA1%>%mutate(Cancer.type=case_when(
   Cancertype=="GIST (Gastrointestinal Stromal Tumor)"~ "GIST",
   Cancertype=="GIST (Gastrointestinal stromal tumor)"~ "GIST",
@@ -99,7 +131,7 @@ There are `r nrow(ctDNA)` rows in the original ctDNA data set for Cancertype GIS
 
 ```{r}
 
-visit.summary<-as.data.frame.matrix(table(ctDNA1$Patient_ID, ctDNA1$Visit_name))
+# visit.summary<-as.data.frame.matrix(table(ctDNA1$Patient_ID, ctDNA1$Visit_name))
 
 myVars = c("Variant_type","Indel_type","Gene","Exon","Percentage","Received_date")
 catVars= c("Variant_type","Indel_type","Gene","Exon","Received_date")
@@ -107,20 +139,39 @@ tab.summary <- CreateTableOne(vars = myVars, data = ctDNA1, factorVars = catVars
 
 ```
 
+```{r}
+ID.n.adsl<-n_distinct(adsl$SUBJID)
+
+myVars = c("COUNTRY","AGE","SEX","PHASE","CANTYP","GISTLINE","GENE1","GISTMUT")
+catVars = c("COUNTRY","SEX","PHASE","CANTYP","GISTLINE","GENE1","GISTMUT")
+adsl.summary<-CreateTableOne(vars = myVars, data = adsl, factorVars = catVars)
+
+
+```
+
+```{r}
+ID.n.adtte<-n_distinct(adtte$SUBJID)
+
+myVars = c("COUNTRY","AGE","SEX","RACE","ETHNIC","DOSEGR","DOSEGRN","ARM","ARMCD",
+           "PARAMCD","AVAL","CNSR","EVNTDESC","PHASE","GISTMUT")
+catVars = c("COUNTRY","SEX","RACE","ETHNIC","DOSEGR","DOSEGRN","ARM","ARMCD",
+           "PARAMCD","CNSR","EVNTDESC","PHASE","GISTMUT")
+adtte.summary<-CreateTableOne(vars = myVars, data = adtte, factorVars = catVars)
+
+
+```
 
 ```{r}
 
 #Imputations
 
-ctDNA1<-ctDNA1%>%group_by(Patient_ID)%>%fill(Cancer.type, .direction = "updown")%>%ungroup()
+ ctDNA1<-ctDNA1%>%group_by(Patient_ID)%>%fill(Cancer.type, .direction = "updown")%>%ungroup()
 
 ctDNA.mutation<-ctDNA1%>%
   filter(Variant_type!="CNV")%>%
   #mutate(Visit_name=droplevels(as.factor(Visit_name)), Gene=droplevels(as.factor(Gene)), Exon=droplevels(as.factor(Exon)))%>%
   expand(Visit_name,nesting(Patient_ID,Variant_type,Gene, Exon, Mut_aa, Mut_nt))%>%arrange(Patient_ID,Visit_name,Variant_type,Gene,Exon)
 
-visit.all<-paste(ctDNA1$Patient_ID, ctDNA1$Visit_name)
-visit.check<-unique(visit.all)
 
 impute<-ctDNA.mutation%>%left_join(ctDNA1, by = c("Patient_ID"="Patient_ID",
                                                         "Visit_name"="Visit_name",
@@ -131,12 +182,12 @@ impute<-ctDNA.mutation%>%left_join(ctDNA1, by = c("Patient_ID"="Patient_ID",
                                                         "Mut_nt"="Mut_nt"))%>%
   group_by(Patient_ID,Variant_type,Gene,Exon,Mut_aa,Mut_nt)%>%
   fill(`ï..Study_ID`:Transcript, .direction = "updown")%>%
-  fill(Cancertype, .direction = "updown")%>%
+  fill(Cancer.type, .direction = "updown")%>%
   ungroup()%>%
   mutate(Percentage=case_when(
     !is.na(Percentage)~Percentage,
-    is.na(Percentage)&paste(Patient_ID,Visit_name)%in%visit.check ~ 0.02,
-    is.na(Percentage)&!paste(Patient_ID,Visit_name)%in%visit.check ~ 999))%>%
+    is.na(Percentage)&paste(Patient_ID,Visit_name)%in%Visit.check ~ 0.02,
+    is.na(Percentage)&!paste(Patient_ID,Visit_name)%in%Visit.check ~ 999))%>%
   filter(Percentage!=999)
 
 # %>%mutate(Visit_name=
