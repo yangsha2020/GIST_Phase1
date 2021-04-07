@@ -12,7 +12,7 @@ toc: TRUE
 
 # DATA
 
-```{r setup,include=FALSE}
+```{r setup}
 knitr::opts_chunk$set(cache=FALSE,echo = FALSE, warning=FALSE, message=FALSE, fig.width = 6.5, fig.height = 6.5)
 
 rm(list = ls())
@@ -36,7 +36,7 @@ adsl<- read_sas("C:\\Users\\ShaYang\\OneDrive - Stat4ward\\Documents\\Deciphera\
 adtte<-read_sas("C:\\Users\\ShaYang\\OneDrive - Stat4ward\\Documents\\Deciphera\\Phase I\\GIST\\adtte.sas7bdat")
 #glimpse(adtte)
 
-ctDNA.all<-read.csv("C:\\Users\\ShaYang\\OneDrive - Stat4ward\\Documents\\Deciphera\\Phase I\\GIST\\20210209_Deciphera_SOW1_1064Samples_G360Report_Cumulative.csv")
+ctDNA.all<-read.csv("C:\\Users\\ShaYang\\OneDrive - Stat4ward\\Documents\\Deciphera\\Phase I\\GIST\\20210319_Deciphera_SOW1_1064Samples_G360Report_CumulativeLATEST.csv")
 
 ctDNA<-ctDNA.all
 # %>%filter(Cancertype=="GIST (Gastrointestinal stromal tumor)"|Cancertype=="GIST (Gastrointestinal Stromal Tumor)")
@@ -69,10 +69,12 @@ Visit.check<-Visit.check[!duplicated(Visit.check)]
 
 ```
 
-ctDNA data from Guardant Health (20201223_Deciphera_SOW1_1064Samples_G360Report_Cumulative.csv)
+ctDNA data from Guardant Health (20210319_Deciphera_SOW1_1064Samples_G360Report_CumulativeLATEST.csv)
 ```{r}
 
 ctDNA<-ctDNA%>%mutate(Patient_ID=gsub(" ","", Patient_ID))
+
+ctDNA<-ctDNA%>%mutate(Patient_ID=ifelse(Patient_ID=="081-02","08-102",Patient_ID))
 
 no.patient<-n_distinct(ctDNA$Patient_ID)
 
@@ -113,6 +115,8 @@ ctDNA1<-ctDNA1%>%mutate(Visit_name=gsub(" ","",Visit_name))%>%
   mutate(Visit_name=gsub("Day1","D1", Visit_name))%>%
   mutate(Visit_name=gsub("FSV","EOS", Visit_name))
 
+ctDNA1<-ctDNA1%>%mutate(Visit_name=ifelse(Visit_name%in%c("3","4","8")&str_detect(Customer_SampleID, "BASE"),"C1D1",Visit_name))
+
 ctDNA1<-ctDNA1%>%mutate(Received_date=as.Date(Received_date, "%m/%d/%Y"),
                    Bloodcoll_date=as.Date(Bloodcoll_date, "%m/%d/%Y"),
                    Reported_date=as.Date(Reported_date,"%m/%d/%Y"))
@@ -152,12 +156,17 @@ adsl.summary<-CreateTableOne(vars = myVars, data = adsl, factorVars = catVars)
 ```{r}
 ID.n.adtte<-n_distinct(adtte$SUBJID)
 
-myVars = c("COUNTRY","AGE","SEX","RACE","ETHNIC","DOSEGR","DOSEGRN","ARM","ARMCD",
+myVars = c("COUNTRY","AGE","SEX","RACE","ETHNIC","DOSEGR","DOSEGRN","GISTLINE","ARM","ARMCD",
            "PARAMCD","AVAL","CNSR","EVNTDESC","PHASE","GISTMUT")
-catVars = c("COUNTRY","SEX","RACE","ETHNIC","DOSEGR","DOSEGRN","ARM","ARMCD",
+catVars = c("COUNTRY","SEX","RACE","ETHNIC","DOSEGR","DOSEGRN","GISTLINE","ARM","ARMCD",
            "PARAMCD","CNSR","EVNTDESC","PHASE","GISTMUT")
 adtte.summary<-CreateTableOne(vars = myVars, data = adtte, factorVars = catVars)
 
+print(adtte.summary, showAllLevels = TRUE, formatOptions = list(big.mark = ","))
+
+adtte.PFS.summary<-CreateTableOne(vars = myVars, data = adtte%>%filter(GISTLINE!="2nd Line"&GISTLINE!="3rd Line")%>%filter(PARAMCD=="PFS")%>%filter(DOSEGR=="150 mg QD"|DOSEGR=="150 mg BID"), factorVars = catVars)
+
+# print(adtte.PFS.summary, showAllLevels = TRUE, formatOptions = list(big.mark = ","))
 
 ```
 
@@ -165,7 +174,7 @@ adtte.summary<-CreateTableOne(vars = myVars, data = adtte, factorVars = catVars)
 
 #Imputations
 
- ctDNA1<-ctDNA1%>%group_by(Patient_ID)%>%fill(Cancer.type, .direction = "updown")%>%ungroup()
+ctDNA1<-ctDNA1%>%group_by(Patient_ID)%>%fill(Cancer.type, .direction = "updown")%>%ungroup()
 
 ctDNA.mutation<-ctDNA1%>%
   filter(Variant_type!="CNV")%>%
@@ -193,5 +202,27 @@ impute<-ctDNA.mutation%>%left_join(ctDNA1, by = c("Patient_ID"="Patient_ID",
 # %>%mutate(Visit_name=
 #         factor(Visit_name,levels =       c("C1D1","C3D1","C5D1","C5D15","C7D1","C9D1","C11D1","C12D1","COC1D1","COC3D1","COC5D1","COC7D1","COC9D1","EOT")) )
 
+cnv<-ctDNA1%>%
+  filter(Variant_type=="CNV")%>%select("Visit_name","Patient_ID",         
+  "Variant_type",        "Gene",               
+  "Exon",                "Mut_aa" ,            
+  "Mut_nt" ,             "ï..Study_ID",        
+ "Customer_SampleID",   "GHRequestID",        
+ "Alt.NoAlt" :"Cancer.type"   )
+
+impute.all<-bind_rows(impute, cnv)%>%select(-"Cancertype")
+```
+
+```{r}
+ t<-adtte%>%select(SUBJID, GISTLINE, ARM, PARAM,PARAMCD, AVAL,AVALC, CNSR, "EVNTDESC","PHASE","GISTMUT")%>%filter(PARAMCD=="PFS")
+
+impute.clinical<-impute.all%>%mutate(ID=gsub("-","", Patient_ID))%>%left_join(t, by=c("ID"="SUBJID"))
+
+
+no.clinical<-impute.clinical%>%filter(is.na(GISTMUT))%>%select(Patient_ID, Gene,Exon,Cancer.type)%>%distinct()
+
+write.csv(impute.clinical, "imputation_with_clinical.csv")
+
+write.csv(no.clinical, "Pts_wo_clinical.csv")
 
 ```
