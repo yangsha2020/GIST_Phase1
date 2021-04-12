@@ -76,9 +76,32 @@ ctDNA<-ctDNA%>%mutate(Patient_ID=gsub(" ","", Patient_ID))
 
 ctDNA<-ctDNA%>%mutate(Patient_ID=ifelse(Patient_ID=="081-02","08-102",Patient_ID))
 
+ctDNA<-ctDNA%>%mutate(Visit_name=gsub(" ","",Visit_name))%>%
+  mutate(Visit_name=gsub("BASELINE", "C1D1", Visit_name,ignore.case = TRUE))%>%
+  mutate(Visit_name=gsub("UNSCH","Unscheduled",Visit_name))%>%
+  mutate(Visit_name=gsub("UNS","Unscheduled",Visit_name))%>%
+  mutate(Visit_name=gsub("Day1","D1", Visit_name))%>%
+  mutate(Visit_name=gsub("FSV","EOS", Visit_name))
+
+ctDNA<-ctDNA%>%mutate(Visit_name=ifelse(Visit_name%in%c("3","4","8")&str_detect(Customer_SampleID, "BASE"),"C1D1",Visit_name))
+
+ctDNA<-ctDNA%>%mutate(Received_date=as.Date(Received_date, "%m/%d/%Y"),
+                   Bloodcoll_date=as.Date(Bloodcoll_date, "%m/%d/%Y"),
+                   Reported_date=as.Date(Reported_date,"%m/%d/%Y"))
+
+ctDNA<-ctDNA%>%mutate(Cancer.type=case_when(
+  Cancertype=="GIST (Gastrointestinal Stromal Tumor)"~ "GIST",
+  Cancertype=="GIST (Gastrointestinal stromal tumor)"~ "GIST",
+  Cancertype=="Glioblastoma"~ "GBM",
+  TRUE ~ Cancertype))
+
+ctDNA<-ctDNA%>%mutate(Cancer.type = na_if(Cancer.type, ""))
+
+ctDNA<-ctDNA%>%group_by(Patient_ID)%>%fill(Cancer.type, .direction = "updown")%>%ungroup()
+
 no.patient<-n_distinct(ctDNA$Patient_ID)
 
-ctDNA<-ctDNA%>%filter(Alt.NoAlt=="1") 
+ctDNA1<-ctDNA%>%filter(Alt.NoAlt=="1") 
 
 # "Alt-NoAlt" = 1 means that at least 1 somatic mutation was detected in that sample
 
@@ -92,7 +115,7 @@ ctDNA.germline<-nrow(ctDNA%>%filter(Somatic_status=="germline"))
 # ctDNA1<-ctDNA1%>%
 #   filter(Somatic_status=="somatic")  will update this once the somatic status is corrected
 
- ctDNA1<-ctDNA%>%
+ ctDNA1<-ctDNA1%>%
    filter(Somatic_status!="germline")  
 
    
@@ -108,27 +131,6 @@ ctDNA.germline<-nrow(ctDNA%>%filter(Somatic_status=="germline"))
 
 no.patient.sucess<-n_distinct(ctDNA1$Patient_ID)
 
-ctDNA1<-ctDNA1%>%mutate(Visit_name=gsub(" ","",Visit_name))%>%
-  mutate(Visit_name=gsub("BASELINE", "C1D1", Visit_name,ignore.case = TRUE))%>%
-  mutate(Visit_name=gsub("UNSCH","Unscheduled",Visit_name))%>%
-  mutate(Visit_name=gsub("UNS","Unscheduled",Visit_name))%>%
-  mutate(Visit_name=gsub("Day1","D1", Visit_name))%>%
-  mutate(Visit_name=gsub("FSV","EOS", Visit_name))
-
-ctDNA1<-ctDNA1%>%mutate(Visit_name=ifelse(Visit_name%in%c("3","4","8")&str_detect(Customer_SampleID, "BASE"),"C1D1",Visit_name))
-
-ctDNA1<-ctDNA1%>%mutate(Received_date=as.Date(Received_date, "%m/%d/%Y"),
-                   Bloodcoll_date=as.Date(Bloodcoll_date, "%m/%d/%Y"),
-                   Reported_date=as.Date(Reported_date,"%m/%d/%Y"))
-
-##???
-ctDNA1<-ctDNA1%>%mutate(Cancer.type=case_when(
-  Cancertype=="GIST (Gastrointestinal Stromal Tumor)"~ "GIST",
-  Cancertype=="GIST (Gastrointestinal stromal tumor)"~ "GIST",
-  Cancertype=="Glioblastoma"~ "GBM",
-  TRUE ~ Cancertype))
-
-ctDNA1<-ctDNA1%>%mutate(Cancer.type = na_if(Cancer.type, ""))
 ```
 
 There are `r nrow(ctDNA)` rows in the original ctDNA data set for Cancertype GIST (Gastrointestinal stromal tumor). `r no.row.fail` rows are excluded since Sample Status is NEGATIVE, `r n_distinct(ctDNA$Patient_ID)-n_distinct(ctDNA1$Patient_ID)` patients are eliminated because of this step. There are  `r no.patient.sucess` patients in the data with Sample Status being Success. 
@@ -174,8 +176,6 @@ adtte.PFS.summary<-CreateTableOne(vars = myVars, data = adtte%>%filter(GISTLINE!
 
 #Imputations
 
-ctDNA1<-ctDNA1%>%group_by(Patient_ID)%>%fill(Cancer.type, .direction = "updown")%>%ungroup()
-
 ctDNA.mutation<-ctDNA1%>%
   filter(Variant_type!="CNV")%>%
   #mutate(Visit_name=droplevels(as.factor(Visit_name)), Gene=droplevels(as.factor(Gene)), Exon=droplevels(as.factor(Exon)))%>%
@@ -214,15 +214,22 @@ impute.all<-bind_rows(impute, cnv)%>%select(-"Cancertype")
 ```
 
 ```{r}
+
+# merge with clinical data.
  t<-adtte%>%select(SUBJID, GISTLINE, ARM, PARAM,PARAMCD, AVAL,AVALC, CNSR, "EVNTDESC","PHASE","GISTMUT")%>%filter(PARAMCD=="PFS")
 
 impute.clinical<-impute.all%>%mutate(ID=gsub("-","", Patient_ID))%>%left_join(t, by=c("ID"="SUBJID"))
 
+no.clinical<-impute.clinical%>%filter(is.na(GISTMUT))%>%select(Patient_ID,Variant_type, Gene,Exon,Cancer.type)%>%distinct()
 
-no.clinical<-impute.clinical%>%filter(is.na(GISTMUT))%>%select(Patient_ID, Gene,Exon,Cancer.type)%>%distinct()
+imputation.w.clinical<-impute.clinical%>%filter(!is.na(GISTMUT))
 
-write.csv(impute.clinical, "imputation_with_clinical.csv")
+#write.csv(imputation.w.clinical, "imputation_with_clinical.csv")
 
-write.csv(no.clinical, "Pts_wo_clinical.csv")
+GIST<-imputation.w.clinical%>%filter(Cancer.type=="GIST")
+
+#write.csv(GIST, "GIST.csv")
+
+#write.csv(no.clinical, "Pts_wo_clinical.csv")
 
 ```
