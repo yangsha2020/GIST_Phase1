@@ -164,12 +164,18 @@ catVars = c("COUNTRY","SEX","RACE","ETHNIC","DOSEGR","DOSEGRN","GISTLINE","ARM",
            "PARAMCD","CNSR","EVNTDESC","PHASE","GISTMUT")
 adtte.summary<-CreateTableOne(vars = myVars, data = adtte, factorVars = catVars)
 
-print(adtte.summary, showAllLevels = TRUE, formatOptions = list(big.mark = ","))
+#print(adtte.summary, showAllLevels = TRUE, formatOptions = list(big.mark = ","))
 
 adtte.PFS.summary<-CreateTableOne(vars = myVars, data = adtte%>%filter(GISTLINE!="2nd Line"&GISTLINE!="3rd Line")%>%filter(PARAMCD=="PFS")%>%filter(DOSEGR=="150 mg QD"|DOSEGR=="150 mg BID"), factorVars = catVars)
 
 # print(adtte.PFS.summary, showAllLevels = TRUE, formatOptions = list(big.mark = ","))
 
+## IPDE and PD dates
+# IPDE.date<-adrs%>%select(SUBJID, ARM,AVISIT,ADT, IPDESTDT)%>%distinct()%>%arrange(SUBJID, ADT)
+
+IPDE.date<-adrs%>%select(SUBJID,IPDESTDT)%>%distinct()%>%filter(!is.na(IPDESTDT))
+
+PD.date<-adtte%>%filter(PARAM=="Progression Free Survival (weeks)")%>%select(SUBJID, ARM,AVALC, ADT,CNSR)
 ```
 
 ```{r}
@@ -231,5 +237,36 @@ GIST<-imputation.w.clinical%>%filter(Cancer.type=="GIST")
 #write.csv(GIST, "GIST.csv")
 
 #write.csv(no.clinical, "Pts_wo_clinical.csv")
+
+```
+
+```{r}
+
+# IPDE checking 
+
+PostIPDE.sample<-ctDNA1%>%mutate(ID=gsub("-","", Patient_ID))%>%
+  left_join(IPDE.date, by=c("ID"="SUBJID"))%>%
+  select(Patient_ID, Visit_name, Bloodcoll_date,IPDESTDT)%>%
+  mutate(closest.date=IPDESTDT-Bloodcoll_date)%>%
+  filter(closest.date<=0)%>%
+  group_by(Patient_ID)%>%
+  mutate(PostIPDE=closest.date[which.min(abs(closest.date))])%>%
+  ungroup()%>%
+  filter(closest.date==PostIPDE)%>%
+  select(Patient_ID, Visit_name, Bloodcoll_date,IPDESTDT)%>%
+  distinct()
+  
+PreIPDE.sample<-ctDNA1%>%mutate(ID=gsub("-","", Patient_ID))%>%
+  left_join(IPDE.date, by=c("ID"="SUBJID"))%>%
+  select(Patient_ID, Visit_name, Bloodcoll_date,IPDESTDT)%>%
+  mutate(closest.date=IPDESTDT-Bloodcoll_date)%>%
+  filter(closest.date>=0)%>%
+  group_by(Patient_ID)%>%
+  mutate(PreIPDE=closest.date[which.min(abs(closest.date))])%>%
+  ungroup()%>%
+  filter(closest.date==PreIPDE)%>%
+  select(Patient_ID, Visit_name, Bloodcoll_date,IPDESTDT)%>%
+  distinct()
+  
 
 ```
