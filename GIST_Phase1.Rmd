@@ -41,6 +41,16 @@ ctDNA.all<-read.csv("C:\\Users\\ShaYang\\OneDrive - Stat4ward\\Documents\\Deciph
 ctDNA<-ctDNA.all
 # %>%filter(Cancertype=="GIST (Gastrointestinal stromal tumor)"|Cancertype=="GIST (Gastrointestinal Stromal Tumor)")
 
+
+sunan.date<-read_excel("C:\\Users\\ShaYang\\OneDrive - Stat4ward\\Documents\\Deciphera\\Phase I\\GIST\\ctDNA Patient selection summary chart.xlsx",sheet = "summary", skip = 2)
+
+names(sunan.date)<-c("Patient_ID", "C1D1","C3D1","C7D1","C19D1","EOT","IPDE.date","preIPDE","postIPDE","PD1.date", "PD2.date","PD1","PD2")
+
+sunan.date<-sunan.date%>%mutate(IPDE.date=as.Date(as.numeric(IPDE.date), origin = "1899-12-30"),
+                    PD1.date=as.Date(as.numeric(PD1.date), origin = "1899-12-30"),
+                    PD2.date=as.Date(as.numeric(PD2.date), origin = "1899-12-30"))
+
+  
 successful.sample.list<-read_excel("C:\\Users\\ShaYang\\OneDrive - Stat4ward\\Documents\\Deciphera\\Phase I\\GIST\\Copy of 20210209_Deciphera_SOW1_1064Samples_G360Report_Successful_Failed.xlsx", sheet="Successful ")
 
 successful.sample.list<-successful.sample.list%>%mutate(Patient_ID=gsub(" ","", Patient_ID))%>%
@@ -247,8 +257,8 @@ GIST<-imputation.w.clinical%>%filter(Cancer.type=="GIST")
 PostIPDE.sample<-ctDNA1%>%mutate(ID=gsub("-","", Patient_ID))%>%
   left_join(IPDE.date, by=c("ID"="SUBJID"))%>%
   select(Patient_ID, Visit_name, Bloodcoll_date,IPDESTDT)%>%
-  mutate(closest.date=IPDESTDT-Bloodcoll_date)%>%
-  filter(closest.date<=0)%>%
+  mutate(closest.date=Bloodcoll_date-IPDESTDT)%>%
+  filter(closest.date>=28)%>%
   group_by(Patient_ID)%>%
   mutate(PostIPDE=closest.date[which.min(abs(closest.date))])%>%
   ungroup()%>%
@@ -268,5 +278,26 @@ PreIPDE.sample<-ctDNA1%>%mutate(ID=gsub("-","", Patient_ID))%>%
   select(Patient_ID, Visit_name, Bloodcoll_date,IPDESTDT)%>%
   distinct()
   
+
+sunan.date<-sunan.date%>%
+  separate(preIPDE, into= c("preIPDE.sample", "preIPDE.date"), sep="-")%>%
+  separate(postIPDE, into= c("postIPDE.sample", "postIPDE.date"), sep="-")%>%
+  separate(PD1, into= c("PD1.sample", "PD1.date"), sep="-")%>%
+  separate(PD2, into= c("PD2.sample", "PD2.date"), sep="-")%>%
+  select(-c(C1D1,C3D1,C7D1,C19D1, EOT))
+
+
+preIPDE.not.matching<-sunan.date%>%left_join(PreIPDE.sample, by = c("Patient_ID"="Patient_ID"))%>%select(Patient_ID, IPDE.date,IPDESTDT, preIPDE.sample,preIPDE.date, Visit_name, Bloodcoll_date)%>%
+  mutate(check=case_when(
+    IPDE.date==IPDESTDT&IPDE.date==Bloodcoll_date ~"Matching",
+    preIPDE.sample==Visit_name~"Not Matching",
+    TRUE~"not OK"))%>%
+  filter(!is.na(Visit_name)&!is.na(preIPDE.sample))
+
+#write.csv(preIPDE.not.matching, "not matching sample selections.csv")
+
+# manual checking 
+# ctDNA%>%filter(Patient_ID=="02-004")%>%select(Patient_ID, Visit_name, Somatic_status, Bloodcoll_date, Alt.NoAlt)%>%view()
+
 
 ```
