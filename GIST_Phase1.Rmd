@@ -42,7 +42,7 @@ ctDNA<-ctDNA.all
 # %>%filter(Cancertype=="GIST (Gastrointestinal stromal tumor)"|Cancertype=="GIST (Gastrointestinal Stromal Tumor)")
 
 
-sunan.date<-read_excel("C:\\Users\\ShaYang\\OneDrive - Stat4ward\\Documents\\Deciphera\\Phase I\\GIST\\ctDNA Patient selection summary chart.xlsx",sheet = "summary", skip = 2)
+sunan.date<-read_excel("C:\\Users\\ShaYang\\OneDrive - Stat4ward\\Documents\\Deciphera\\Phase I\\GIST\\ctDNA Patient selection summary chart.xlsx",sheet = "summary", range = "B3:N151")
 
 names(sunan.date)<-c("Patient_ID", "C1D1","C3D1","C7D1","C19D1","EOT","IPDE.date","preIPDE","postIPDE","PD1.date", "PD2.date","PD1","PD2")
 
@@ -185,7 +185,7 @@ adtte.PFS.summary<-CreateTableOne(vars = myVars, data = adtte%>%filter(GISTLINE!
 
 IPDE.date<-adrs%>%select(SUBJID,IPDESTDT)%>%distinct()%>%filter(!is.na(IPDESTDT))
 
-PD.date<-adtte%>%filter(PARAM=="Progression Free Survival (weeks)")%>%select(SUBJID, ARM,AVALC, ADT,CNSR)
+PD.date<-adtte%>%filter(PARAM=="Progression Free Survival (weeks)")%>%select(SUBJID,ADT)
 ```
 
 ```{r}
@@ -252,13 +252,21 @@ GIST<-imputation.w.clinical%>%filter(Cancer.type=="GIST")
 
 ```{r}
 
-# IPDE checking 
+# IPDE sample selection checking 
+
+sunan.date<-sunan.date%>%
+  mutate(PD2=ifelse(Patient_ID=="04-015", "C33D1-5/20/2019", PD2))%>%
+  separate(preIPDE, into= c("preIPDE.sample", "preIPDE.date"), sep="-")%>%
+  separate(postIPDE, into= c("postIPDE.sample", "postIPDE.date"), sep="-")%>%
+  separate(PD1, into= c("PD1.sample", "PD1.sample.date"), sep="-")%>%
+  separate(PD2, into= c("PD2.sample", "PD2.sample.date"), sep="-")%>%
+  select("Patient_ID","IPDE.date","preIPDE.sample","preIPDE.date",    "postIPDE.sample", "postIPDE.date","PD1.date","PD2.date", "PD1.sample", "PD1.sample.date", "PD2.sample", "PD2.sample.date")
 
 PostIPDE.sample<-ctDNA1%>%mutate(ID=gsub("-","", Patient_ID))%>%
   left_join(IPDE.date, by=c("ID"="SUBJID"))%>%
   select(Patient_ID, Visit_name, Bloodcoll_date,IPDESTDT)%>%
   mutate(closest.date=Bloodcoll_date-IPDESTDT)%>%
-  filter(closest.date>=28)%>%
+  filter(closest.date>=21)%>%
   group_by(Patient_ID)%>%
   mutate(PostIPDE=closest.date[which.min(abs(closest.date))])%>%
   ungroup()%>%
@@ -278,26 +286,120 @@ PreIPDE.sample<-ctDNA1%>%mutate(ID=gsub("-","", Patient_ID))%>%
   select(Patient_ID, Visit_name, Bloodcoll_date,IPDESTDT)%>%
   distinct()
   
-
-sunan.date<-sunan.date%>%
-  separate(preIPDE, into= c("preIPDE.sample", "preIPDE.date"), sep="-")%>%
-  separate(postIPDE, into= c("postIPDE.sample", "postIPDE.date"), sep="-")%>%
-  separate(PD1, into= c("PD1.sample", "PD1.date"), sep="-")%>%
-  separate(PD2, into= c("PD2.sample", "PD2.date"), sep="-")%>%
-  select(-c(C1D1,C3D1,C7D1,C19D1, EOT))
-
-
-preIPDE.not.matching<-sunan.date%>%left_join(PreIPDE.sample, by = c("Patient_ID"="Patient_ID"))%>%select(Patient_ID, IPDE.date,IPDESTDT, preIPDE.sample,preIPDE.date, Visit_name, Bloodcoll_date)%>%
+preIPDE.matching<-sunan.date%>%left_join(PreIPDE.sample, by = c("Patient_ID"="Patient_ID"))%>%select(Patient_ID, IPDE.date,IPDESTDT, preIPDE.sample,preIPDE.date, Visit_name, Bloodcoll_date)%>%
   mutate(check=case_when(
-    IPDE.date==IPDESTDT&IPDE.date==Bloodcoll_date ~"Matching",
-    preIPDE.sample==Visit_name~"Not Matching",
-    TRUE~"not OK"))%>%
-  filter(!is.na(Visit_name)&!is.na(preIPDE.sample))
+    preIPDE.sample==Visit_name~"Matching",
+    TRUE~"not Matching"))%>%
+  filter(!is.na(Visit_name)&!is.na(preIPDE.sample))%>%
+  rename(preIPDE.sample.prog=Visit_name,
+         preIPDE.prog.date=Bloodcoll_date,
+         preIPDE.check=check
+         )
 
-#write.csv(preIPDE.not.matching, "not matching sample selections.csv")
+#write.csv(preIPDE.matching, "preIPDE sample selections.csv")
+
+postIPDE.matching<-sunan.date%>%left_join(PostIPDE.sample, by = c("Patient_ID"="Patient_ID"))%>%select(Patient_ID, IPDE.date,IPDESTDT, postIPDE.sample,postIPDE.date, Visit_name, Bloodcoll_date)%>%
+  mutate(check=case_when(
+    postIPDE.sample==Visit_name~"Matching",
+    postIPDE.sample=="FSV"&Visit_name=="EOS"~ "Matching",
+    TRUE~"not Matching"))%>%
+  filter(!is.na(Visit_name)&!is.na(postIPDE.sample))%>%
+  rename(postIPDE.sample.prog=Visit_name,
+         postIPDE.prog.date=Bloodcoll_date,
+         postIPDE.check=check)
+
+#write.csv(postIPDE.matching, "postIPDE sample selections.csv")
 
 # manual checking 
-# ctDNA%>%filter(Patient_ID=="02-004")%>%select(Patient_ID, Visit_name, Somatic_status, Bloodcoll_date, Alt.NoAlt)%>%view()
+# ctDNA%>%filter(Patient_ID=="02-004")%>%select(Patient_ID, Visit_name, Somatic_status, Bloodcoll_date, Alt.NoAlt, Sample_status)%>%view()
 
 
+# PD sample selection checking 
+PD1.ctSample<-ctDNA1%>%mutate(ID=gsub("-","", Patient_ID))%>%
+  left_join(IPDE.date, by=c("ID"="SUBJID"))%>%
+  select(Patient_ID, ID,Visit_name, Bloodcoll_date,IPDESTDT)%>%
+  left_join(PD.date, by=c("ID"="SUBJID"))%>%
+  select(Patient_ID, Visit_name, Bloodcoll_date,IPDESTDT, ADT)%>%
+  rename(PD1.date=ADT)%>%
+  filter(!is.na(PD1.date))%>%
+  mutate(closest=Bloodcoll_date-PD1.date)%>%
+  filter((!is.na(IPDESTDT)&closest>=0&Bloodcoll_date<=IPDESTDT)|
+         (!is.na(IPDESTDT)&closest<=0&abs(Bloodcoll_date-PD1.date)<=14)|
+         is.na(IPDESTDT)&abs(Bloodcoll_date-PD1.date)<=14|
+         is.na(IPDESTDT)&closest>=0  
+         )%>%
+  group_by(Patient_ID)%>%
+  mutate(PD1.ctDNA.date=closest[which.min(abs(closest))])%>%
+  ungroup()%>%
+  filter(closest==PD1.ctDNA.date)%>%
+  select(Patient_ID, Visit_name, Bloodcoll_date,PD1.date,IPDESTDT)%>%
+  distinct()
+
+PD1.matching<-sunan.date%>%full_join(PD1.ctSample, by = c("Patient_ID"="Patient_ID"))%>%
+  rename(PD1.date.sunan=PD1.date.x,PD1.date.clinical=PD1.date.y)%>%
+  select("Patient_ID" ,"IPDE.date", "IPDESTDT","PD1.date.sunan","PD1.date.clinical", "PD1.sample", "PD1.sample.date", "Visit_name" , "Bloodcoll_date")%>%
+  mutate(PD1.check=case_when(
+    PD1.sample==Visit_name~"Matching",
+    PD1.sample=="FSV"&Visit_name=="EOS"~ "Matching",
+    PD1.sample.date==Bloodcoll_date~"Matching",
+    PD1.sample=="EOT"&Visit_name=="EOS"~"Matching",
+    as.Date(PD1.sample.date,"%m%d%Y")==as.Date(Bloodcoll_date,"%m%d%Y")~"Matching",
+    TRUE~"not Matching"))%>%
+  filter(!is.na(Visit_name)&!is.na(PD1.sample))%>%
+  rename(PD1.sample.prog=Visit_name,
+         PD1.sample.prog.date=Bloodcoll_date
+         )
+
+ #write.csv(PD1.matching, "PD1 sample selections.csv")
+
+PD2.ctSample<-ctDNA1%>%mutate(ID=gsub("-","", Patient_ID))%>%
+  left_join(IPDE.date, by=c("ID"="SUBJID"))%>%
+  select(Patient_ID, ID,Visit_name, Bloodcoll_date,IPDESTDT)%>%
+  full_join(sunan.date, by=c("Patient_ID"="Patient_ID"))%>%
+  select(Patient_ID, Visit_name, Bloodcoll_date,PD2.date,IPDESTDT)%>%
+  filter(!is.na(PD2.date))%>%
+  #mutate(PD2.sample.date=ifelse(PD2.sample.date=="R",NA,PD2.sample.date))%>%
+  mutate(PD2.date=as.Date(PD2.date,"%m/%d/%Y"))%>%
+  mutate(sample.time=Bloodcoll_date-PD2.date)%>%
+   filter(sample.time>=0|
+         sample.time<=0&abs(Bloodcoll_date-PD2.date)<=14)%>%
+  #filter(abs(Bloodcoll_date-PD2.date)<=14)%>%
+  group_by(Patient_ID)%>%
+  mutate(closest.date=sample.time[which.min(abs(sample.time))])%>%
+  ungroup()%>%
+  filter(sample.time==closest.date)%>%
+  select(Patient_ID, Visit_name,Bloodcoll_date,PD2.date,IPDESTDT)%>%
+  distinct()
+
+t<-sunan.date%>%select(Patient_ID,PD2.date,"PD2.sample","PD2.sample.date")%>%
+   filter(!is.na(PD2.date))
+  #filter(PD2.sample!="NA")%>%filter(!is.na(PD2.sample))
+
+PD2.matching<-PD2.ctSample%>%
+  full_join(t, by=c("Patient_ID"="Patient_ID", "PD2.date"="PD2.date"))%>%
+  mutate(PD2.check=case_when(
+    PD2.sample==Visit_name~"Matching",
+    PD2.sample=="FSV"&Visit_name=="EOS"~ "Matching",
+    as.Date(PD2.sample.date,"%m%d%Y")==Bloodcoll_date~"Matching",
+    PD2.sample=="NA"&is.na(Visit_name)~"Matching",
+    TRUE~"not Matching"))%>%
+  filter(!is.na(PD2.date))%>%
+  rename(PD2.sample.prog=Visit_name,
+         PD2.prog.date=Bloodcoll_date
+         )%>%
+  select(Patient_ID, IPDESTDT,PD2.date,PD2.sample, PD2.sample.date, PD2.sample.prog, PD2.prog.date, PD2.check)
+
+#write.csv(PD2.matching, "PD2 sample selections.csv")
+
+matching.table<-preIPDE.matching%>%
+  full_join(postIPDE.matching, by=c("Patient_ID"="Patient_ID",
+                                                        "IPDE.date"="IPDE.date",
+                                                        "IPDESTDT"="IPDESTDT"))%>%
+  full_join(PD1.matching, by=c("Patient_ID"="Patient_ID",
+                                                        "IPDE.date"="IPDE.date",
+                                                        "IPDESTDT"="IPDESTDT"))%>%
+  full_join(PD2.matching, by=c("Patient_ID"="Patient_ID","IPDESTDT"="IPDESTDT"))
+
+
+# write.csv(matching.table, "sample selections.csv")
 ```
